@@ -52,6 +52,7 @@ class SwingFootTrajectory(object):
 
     def __call__(self, t):
         # write your code here
+        pass
 
 # Computes a walking whole-body motion
 #
@@ -85,6 +86,7 @@ class WalkingMotion(object):
         self.lf_traj = Piecewise()
         self.rf_traj = Piecewise()
         # write your code here
+        pass
 
 
 if __name__ == "__main__":

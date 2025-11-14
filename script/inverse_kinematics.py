@@ -27,18 +27,18 @@
 import numpy as np
 import numpy.linalg
 from scipy.optimize import fmin_slsqp
-from pinocchio import forwardKinematics, log, neutral
+from pinocchio import forwardKinematics, log, neutral, log6
 import eigenpy
 
 class CallbackLogger:
-     def __init__(self):
-          self.nfeval = 1
-     def __call__(self,x):
-          print('===CBK=== {0:4d}   {1}'.format(self.nfeval, x))
-          self.nfeval += 1
+    def __init__(self):
+        self.nfeval = 1
+    def __call__(self,x):
+        print('===CBK=== {0:4d}   {1}'.format(self.nfeval, x))
+        self.nfeval += 1
 
 def normalized_quaternion(q):
-     return numpy.linalg.norm(q[3:7]) - 1
+    return numpy.linalg.norm(q[3:7]) - 1
 
 # This class computes inverse kinematics by numerical optimization
 #
@@ -58,36 +58,54 @@ class InverseKinematics (object):
         self.robot = robot
         self.data = self.robot.model.createData()
         q = neutral (robot.model)
+        self.q = q.copy()
         self.fullConfigSize = len(q)
         forwardKinematics(robot.model, self.data, q)
+
         # Initialize references of feet and center of mass with initial values
-        self.leftFootRefPose = self.data.oMi [robot.leftFootJointId].copy ()
-        self.rightFootRefPose = self.data.oMi [robot.rightFootJointId].copy ()
-        self.waistRefPose = self.data.oMi [robot.waistJointId].copy ()
+        # this will be the target to reach
+        self.leftFootRefPose    = self.data.oMi [robot.leftFootJointId].copy ()
+        self.rightFootRefPose   = self.data.oMi [robot.rightFootJointId].copy ()
+        self.waistRefPose       = self.data.oMi [robot.waistJointId].copy ()
 
     def cost (self, q):
-        # write your code here
+        forwardKinematics(self.robot.model, self.data, q)
+        leftFootPose  = self.data.oMi [self.robot.leftFootJointId].copy()
+        rightFootPose = self.data.oMi [self.robot.rightFootJointId].copy()
+        waistPose     = self.data.oMi [self.robot.waistJointId].copy()
+
+        logLeftFoot  = log6(self.leftFootRefPose.inverse() * leftFootPose)
+        logRightFoot = log6(self.rightFootRefPose.inverse() * rightFootPose)
+        logWaist     = log6(self.waistRefPose.inverse() * waistPose)
+
+        return np.dot(logLeftFoot, logLeftFoot) + np.dot(logRightFoot, logRightFoot) + np.dot(logWaist, logWaist)
 
     def solve (self, q):
-        # write your code here
+        return fmin_slsqp(self.cost,q,
+                    f_eqcons=normalized_quaternion,
+                    iprint=2, full_output=1)[0]
+
 
 if __name__ == "__main__":
-     from talos import Robot
-     from pinocchio import neutral
-     import numpy as np
-     from inverse_kinematics import InverseKinematics
-     import eigenpy
+    from talos import Robot
+    from pinocchio import neutral
+    import numpy as np
+    from inverse_kinematics import InverseKinematics
+    import eigenpy
 
-     robot = Robot ()
-     ik = InverseKinematics (robot)
-     ik.rightFootRefPose.translation = np.array ([0, -0.1, 0.1])
-     ik.leftFootRefPose.translation = np.array ([0, 0.1, 0.1])
-     ik.waistRefPose.translation = np.array ([0, 0, 0.95])
+    robot = Robot ()
+    
+    ik = InverseKinematics (robot)
+    ik.rightFootRefPose.translation = np.array ([0, -0.1, 0.1])
+    ik.leftFootRefPose.translation = np.array ([0, 0.1, 0.1])
+    ik.waistRefPose.translation = np.array ([0, 0, 0.95])
 
-     q0 = neutral (robot.model)
-     q0 [robot.name_to_config_index["leg_right_4_joint"]] = .2
-     q0 [robot.name_to_config_index["leg_left_4_joint"]] = .2
-     q0 [robot.name_to_config_index["arm_left_2_joint"]] = .2
-     q0 [robot.name_to_config_index["arm_right_2_joint"]] = -.2
-     q = ik.solve (q0)
-     robot.display(q)
+    q0 = neutral (robot.model)
+    robot.display(q0)
+    q0 [robot.name_to_config_index["leg_right_4_joint"]] = .2
+    q0 [robot.name_to_config_index["leg_left_4_joint"]] = .2
+    q0 [robot.name_to_config_index["arm_left_2_joint"]] = .2
+    q0 [robot.name_to_config_index["arm_right_2_joint"]] = -.2
+    q = ik.solve (q0)
+    print(q)
+    robot.display(q)
