@@ -48,11 +48,23 @@ class SwingFootTrajectory(object):
         self.t_init = t_init
         self.t_end = t_end
         self.height = height
+        
         # Write your code here
+        self.foot_copdes = CoPDes(np.array([init[0], init[1]]),
+                             [np.array([(init[0]+end[0])/2, (init[1]+end[1])/2 + height])],
+                             np.array([end[0], end[1]]))
+
+        times = np.linspace(t_init, t_end, num=100)
+        self.cop = np.array(list(map(self.foot_copdes, [times])))
 
     def __call__(self, t):
-        # write your code here
-        pass
+        
+        if t < self.t_init:
+            return self.cop[0,0], self.cop[0,1], self.cop[0,2]
+        elif t > self.t_end:
+            return self.cop[-1,0], self.cop[-1,1], self.cop[-1,2]
+        else:
+            return self.foot_copdes(t)[0], self.foot_copdes(t)[1], self.cop[int((t - self.t_init)/(self.t_end - self.t_init)*99),2]
 
 # Computes a walking whole-body motion
 #
@@ -86,6 +98,9 @@ class WalkingMotion(object):
         self.lf_traj = Piecewise()
         self.rf_traj = Piecewise()
         # write your code here
+
+                
+
         pass
 
 
