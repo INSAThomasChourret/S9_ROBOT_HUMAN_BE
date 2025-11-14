@@ -39,7 +39,25 @@ class CoPDes(Piecewise):
     #   - end: final position of the CoP
     def __init__(self, start, steps, end):
         super().__init__()
+        self.start = start
+        self.end = end
+        self.steps = steps
+
         # write your code here
+        self.segments.append(Affine(0, self.double_support_time, self.start, self.steps[0]))
+        t = self.double_support_time
+        for i in range(len(self.steps)-1):
+            self.segments.append(Affine(t, t + self.single_support_time, self.steps[i], self.steps[i+1]))
+            t += self.single_support_time
+            self.segments.append(Affine(t, t + self.double_support_time, self.steps[i+1], self.steps[i+1]))
+            t += self.double_support_time
+        self.segments.append(Affine(t, t + self.single_support_time, self.steps[-1], self.end))
+        self.segments.append(Constant(t + self.single_support_time, float('inf'), self.end))
+
+
+        
+            
+
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
