@@ -54,6 +54,14 @@ class ComTrajectory(object):
         N = int(T/self.delta_t) + 1
         self.N = N
         # write your code here
+        self.X = np.zeros(2*N)
+
+        for i in range(N):
+            t = i * self.delta_t
+            cop = CoPDes(self.start, self.steps, self.end)(t)
+            self.X[2*i] = cop[0]
+            self.X[2*i+1] = cop[1]
+
         return self.X
 
     # Return projection of center of mass on horizontal plane at time t
