@@ -31,7 +31,7 @@ from pinocchio import centerOfMass, forwardKinematics
 from cop_des import CoPDes
 from com_trajectory import ComTrajectory
 from inverse_kinematics import InverseKinematics
-from tools import Constant, Piecewise
+from tools import Constant, Piecewise, Affine
 
 # Computes the trajectory of a swing foot.
 #
@@ -48,23 +48,32 @@ class SwingFootTrajectory(object):
         self.t_init = t_init
         self.t_end = t_end
         self.height = height
-        
-        # Write your code here
-        self.foot_copdes = CoPDes(np.array([init[0], init[1]]),
-                             [np.array([(init[0]+end[0])/2, (init[1]+end[1])/2 + height])],
-                             np.array([end[0], end[1]]))
+        self.init = init
+        self.end = end
+        self.delta_t = t_end - t_init
 
-        times = np.linspace(t_init, t_end, num=100)
-        self.cop = np.array(list(map(self.foot_copdes, [times])))
+        self.foot_trajectory = None
+        
 
     def __call__(self, t):
         
         if t < self.t_init:
-            return self.cop[0,0], self.cop[0,1], self.cop[0,2]
-        elif t > self.t_end:
-            return self.cop[-1,0], self.cop[-1,1], self.cop[-1,2]
-        else:
-            return self.foot_copdes(t)[0], self.foot_copdes(t)[1], self.cop[int((t - self.t_init)/(self.t_end - self.t_init)*99),2]
+            t = self.t_init
+        if t > self.t_end:
+            t = self.t_end
+
+        s = (t - self.t_init) / self.delta_t
+        s2 = s * s
+        s3 = s2 * s
+
+        # 3rd order polynomial for x and y
+        x = self.init[0] + (self.end[0] - self.init[0]) * (3 * s2 - 2 * s3)
+        y = self.init[1] + (self.end[1] - self.init[1]) * (3 * s2 - 2 * s3)
+
+        # 4th order polynomial for z
+        z = self.init[2] + self.height * 16 * s2 * (s - 1)**2
+
+        return np.array([x, y, z])
 
 # Computes a walking whole-body motion
 #
@@ -79,6 +88,8 @@ class WalkingMotion(object):
 
     def __init__(self, robot):
         self.robot = robot
+        self.ik = InverseKinematics (robot)
+        self.times = np.arange(0, 20, 0.01)
 
     def compute(self, q0, steps, waistOrientation = None):
         # Test input data
@@ -90,7 +101,7 @@ class WalkingMotion(object):
         # Compute offset between waist and center of mass since we control the center of mass
         # indirectly by controlling the waist.
         data = self.robot.model.createData()
-        forwardKinematics(self.robot.model, data, q0)
+        #forwardKinematics(self.robot.model, data, q0)
         com = centerOfMass(self.robot.model, data, q0)
         waist_pose = data.oMi[self.robot.waistJointId]
         com_offset = waist_pose.translation - com
@@ -99,12 +110,92 @@ class WalkingMotion(object):
         self.rf_traj = Piecewise()
         # write your code here
 
-                
+        t_ds = CoPDes.double_support_time
+        t_ss = CoPDes.single_support_time
 
-        pass
+        # Initial foot positions
+        self.rf_traj.segments.append(Constant(0., t_ds, steps_[0]))
+        self.lf_traj.segments.append(Constant(0., t_ds, steps_[1]))
 
+        # Steps
+        for i in range(1, (len(steps_) - 2)//2 + 1):
+            self.rf_traj.segments.append(SwingFootTrajectory(t_ds + (i-1)*(t_ss + t_ds)*2,
+                                                            t_ds + (i-1)*(t_ss + t_ds)*2 + t_ss,
+                                                            steps_[2*i - 2], steps_[2*i], WalkingMotion.step_height))
+            self.lf_traj.segments.append(Constant(t_ds + (i-1)*(t_ss + t_ds)*2,
+                                                  t_ds + (i-1)*(t_ss + t_ds)*2 + t_ss,
+                                                  steps_[2*i - 1]))
 
-if __name__ == "__main__":
+            self.rf_traj.segments.append(Constant(t_ds + (i-1)*(t_ss + t_ds)*2 + t_ss,
+                                                  t_ds + i*(t_ss + t_ds)*2,
+                                                  steps_[2*i]))
+            self.lf_traj.segments.append(SwingFootTrajectory(t_ds + (i-1)*(t_ss + t_ds)*2 + t_ss,
+                                                            t_ds + i*(t_ss + t_ds)*2,
+                                                            steps_[2*i - 1], steps_[2*i + 1], WalkingMotion.step_height))
+
+        # Final foot positions
+        n = (len(steps_) - 2)//2
+        self.rf_traj.segments.append(Constant(t_ds + n*(t_ss + t_ds)*2,
+                                              t_ds + n*(t_ss + t_ds)*2 + t_ss,
+                                              steps_[-2]))
+        self.lf_traj.segments.append(Constant(t_ds + n*(t_ss + t_ds)*2,
+                                              t_ds + n*(t_ss + t_ds)*2 + t_ss,
+                                              steps_[-1]))
+        
+        ##Plot foot trajectories
+        #import matplotlib.pyplot as plt
+        #times = 0.01 * np.arange(int((self.rf_traj.segments[-1].t_end)/0.01)+1)
+        #rf = np.array(list(map(self.rf_traj, times)))
+        #lf = np.array(list(map(self.lf_traj, times)))
+        #fig = plt.figure()
+        #ax = fig.add_subplot(111)
+        #ax.set_xlabel("second")
+        #ax.set_ylabel("meter")
+        #ax.plot(times, lf[:,0], label="x left foot")
+        #ax.plot(times, rf[:,0], label="x right foot")
+        #ax.plot(times, lf[:,1], label="y left foot")
+        #ax.plot(times, rf[:,1], label="y right foot")
+        #ax.plot(times, lf[:,2], label="z left foot")
+        #ax.plot(times, rf[:,2], label="z right foot")
+        #ax.legend()
+        #plt.show()
+
+        # Compute trajectory of the center of mass
+        start = steps_[0][:2]           # first foot step position
+        end = steps_[-1][:2]            # last foot step position
+        foot_positions = [s[:2] for s in steps_]  # only x,y of steps
+        com_traj = ComTrajectory(start, foot_positions, end, 0.95)
+        self.com_trajectory = com_traj
+        com_traj.compute()
+
+        configs = []
+        
+        for i in range(len(self.times)):
+            t = self.times[i]
+            # Compute desired positions of left and right foot
+            left_foot_pos = self.lf_traj(t)
+            right_foot_pos = self.rf_traj(t)
+
+            # Set desired foot positions
+            self.ik.leftFootRefPose.translation = left_foot_pos
+            self.ik.rightFootRefPose.translation = right_foot_pos
+            
+            # Set desired waist position
+            com_pos = com_traj(t)
+            waist_pos = com_pos + com_offset
+            self.ik.waistRefPose.translation = waist_pos
+
+            # Solve inverse kinematics
+            if i == 0:
+                q_init = q0
+            else:
+                q_init = configs[-1]
+            q_sol = self.ik.solve(q_init)
+            configs.append(q_sol)
+
+        return configs
+
+def main():
     import matplotlib.pyplot as plt
     from talos import Robot
     from pinocchio import neutral
@@ -125,15 +216,33 @@ if __name__ == "__main__":
     q0 [robot.name_to_config_index["arm_right_2_joint"]] = -.2
     q = ik.solve (q0)
     robot.display(q)
+
+
+    ## Test SwalkingMotion
+    ##sft = SwingFootTrajectory(0., 2., np.array([0., 0., 0.]), np.array([0.2, 0., 0.]), 0.05)
+    ##times = 0.01 * np.arange(200)
+    ##foot = np.array(list(map(sft, times)))
+    ##fig = plt.figure()
+    ##ax = fig.add_subplot(111)
+    ##ax.set_xlabel("second")
+    ##ax.set_ylabel("meter")
+    ##ax.plot(times, foot[:,0], label="x_foot")
+    ##ax.plot(times, foot[:,1], label="y_foot")
+    ##ax.plot(times, foot[:,2], label="z_foot")
+    ##ax.legend()
+    ##plt.show()
+
     wm = WalkingMotion(robot)
     # First two values correspond to initial position of feet
     # Last two values correspond to final position of feet
-    steps = [np.array([0, -.1, 0.]), np.array([0.4, .1, 0.]),
-             np.array([.8, -.1, 0.]), np.array([1.2, .1, 0.]),
-             np.array([1.6, -.1, 0.]), np.array([1.6, .1, 0.])]
+    steps = [np.array([0.0, -.1, 0.1]), np.array([0.0, .1, 0.1]), 
+             np.array([0.4, -.1, 0.1]),np.array([.8, .1, 0.1]), 
+             np.array([1.2, -.1, 0.1]),np.array([1.6, .1, 0.1]), 
+             np.array([1.6, -.1, 0.1]), np.array([1.6, .1, 0.1])]
     configs = wm.compute(q, steps)
+    #print(len(configs))
     for q in configs:
-        time.sleep(1e-2)
+        time.sleep(2e-2)
         robot.display(q)
     delta_t = wm.com_trajectory.delta_t
     times = delta_t*np.arange(wm.com_trajectory.N+1)
@@ -156,4 +265,8 @@ if __name__ == "__main__":
     ax3.plot(times, rf[:,2], label="z right foot")
     ax3.legend()
     plt.show()
+
+
+if __name__ == "__main__":
+    main()
 

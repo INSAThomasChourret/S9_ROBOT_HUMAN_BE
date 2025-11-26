@@ -34,7 +34,7 @@ class CallbackLogger:
     def __init__(self):
         self.nfeval = 1
     def __call__(self,x):
-        print('===CBK=== {0:4d}   {1}'.format(self.nfeval, x))
+        #print('===CBK=== {0:4d}   {1}'.format(self.nfeval, x))
         self.nfeval += 1
 
 def normalized_quaternion(q):
@@ -83,7 +83,7 @@ class InverseKinematics (object):
     def solve (self, q):
         return fmin_slsqp(self.cost,q,
                     f_eqcons=normalized_quaternion,
-                    iprint=2, full_output=1)[0]
+                    iprint=0, full_output=1)[0]
 
 
 if __name__ == "__main__":
@@ -107,5 +107,5 @@ if __name__ == "__main__":
     q0 [robot.name_to_config_index["arm_left_2_joint"]] = .2
     q0 [robot.name_to_config_index["arm_right_2_joint"]] = -.2
     q = ik.solve (q0)
-    print(q)
+    #print(q)
     robot.display(q)
