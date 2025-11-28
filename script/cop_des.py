@@ -47,13 +47,12 @@ class CoPDes(Piecewise):
         self.segments.append(Affine(0, self.double_support_time, self.start, self.steps[0]))
         t = self.double_support_time
         for i in range(len(self.steps)-1):
-            self.segments.append(Affine(t, t + self.single_support_time, self.steps[i], self.steps[i+1]))
+            self.segments.append(Constant(t, t + self.single_support_time, self.steps[i]))
             t += self.single_support_time
-            self.segments.append(Affine(t, t + self.double_support_time, self.steps[i+1], self.steps[i+1]))
+            self.segments.append(Affine(t, t + self.double_support_time, self.steps[i], self.steps[i+1]))
             t += self.double_support_time
-        self.segments.append(Affine(t, t + self.single_support_time, self.steps[-1], self.end))
-        self.segments.append(Constant(t + self.single_support_time, float('inf'), self.end))
-
+        self.segments.append(Affine(t, t + self.double_support_time, self.steps[-1], self.end))
+        self.segments.append(Constant(t + self.double_support_time, float('inf'), self.end))
 
         
             
