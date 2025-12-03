@@ -54,16 +54,74 @@ class ComTrajectory(object):
         N = int(T/self.delta_t) + 1
         self.N = N
         # write your code here
-        self.X = np.zeros(2*N)
+        
+        M = 2*N
 
-        for i in range(N):
-            t = i * self.delta_t
-            cop = CoPDes(self.start, self.steps, self.end)(t)
-            self.X[2*i] = cop[0]
-            self.X[2*i+1] = cop[1]
+        X = np.zeros((N+1, 2))
+        X[0] = self.start
+        X[-1]= self.end
+
+        Xflat = X.flatten()
+        X = Xflat
+
+        D = np.zeros((M+2, M))
+        for i in range(M):
+            D[i,i] = 1
+            D[i+2,i] = -1
+
+
+        Im = np.identity(M)
+
+        #d0 = -x(0) 0 0 ... 0 x(n+1)
+        d0 = np.zeros(M+2)
+        d0[0:2] = -self.start
+        d0[-2:] = self.end
+
+        cop_des = CoPDes(self.start, self.steps, self.end)
+        self.cop_des = cop_des
+        cop_des_vals = np.array([cop_des(i*self.delta_t)[:2] for i in range(N)])
+        cop_des = cop_des_vals.reshape((M))
+
+        
+
+        # A = Im + z/g*delta_t^2 * D^T*D
+        A = Im + (self.z_com/(self.g*self.delta_t**2)) * (D.T @ D)
+
+        #b = CoP_des - z/g*delta_t^2 * D^T*d0
+        b = cop_des - (self.z_com/(self.g*self.delta_t**2)) * (D.T @ d0)
+
+        C = np.zeros((M, M-4))
+        C[2:M-2, :] = np.identity(M-4)
+
+        d = np.concatenate([self.start, np.zeros(M-4), self.end])
+
+        def solve_reduced_system(A, C, b, d):
+            """
+            Résout l'équation : X_bar = (AC)^+ (b - Ad)
+            
+            Paramètres:
+            - A : Matrice de dynamique (N x N)
+            - C : Matrice de sélection (N x N-2)
+            - b : Vecteur cible (CoP_des) (N x 2)
+            - d : Vecteur de contraintes de bord (offsets) (N x 2)
+            
+            Retourne:
+            - X_bar : La trajectoire du centre de masse "du milieu" (sans start/end)
+            """
+            
+            lhs_matrix = A @ C  
+            rhs_vector = b - (A @ d)
+            
+            x_bar, _, _, _ = np.linalg.lstsq(lhs_matrix, rhs_vector, rcond=None)
+            
+            return x_bar
+        
+        X_bar = solve_reduced_system(A, C, b, d)
+        self.X = C @ X_bar + d
+        print(self.X.shape)
 
         return self.X
-
+    
     # Return projection of center of mass on horizontal plane at time t
     def __call__(self, t):
         if self.N < 0:

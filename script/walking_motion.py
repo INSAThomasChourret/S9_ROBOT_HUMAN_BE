@@ -161,10 +161,9 @@ class WalkingMotion(object):
         #plt.show()
 
         # Compute trajectory of the center of mass
-        start = steps_[0][:2]           # first foot step position
-        end = steps_[-1][:2]            # last foot step position
+        end = 0.5 * (steps_[-1] + steps_[-2])
         foot_positions = [s[:2] for s in steps_]  # only x,y of steps
-        com_traj = ComTrajectory(start, foot_positions, end, 0.95)
+        com_traj = ComTrajectory(com[:2], foot_positions, end[:2], 0.95)
         self.com_trajectory = com_traj
         com_traj.compute()
 
@@ -242,7 +241,7 @@ def main():
     configs = wm.compute(q, steps)
     #print(len(configs))
     for q in configs:
-        time.sleep(2e-2)
+        time.sleep(1e-2)
         robot.display(q)
     delta_t = wm.com_trajectory.delta_t
     times = delta_t*np.arange(wm.com_trajectory.N+1)
