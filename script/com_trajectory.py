@@ -82,8 +82,6 @@ class ComTrajectory(object):
         cop_des_vals = np.array([cop_des(i*self.delta_t)[:2] for i in range(N)])
         cop_des = cop_des_vals.reshape((M))
 
-        
-
         # A = Im + z/g*delta_t^2 * D^T*D
         A = Im + (self.z_com/(self.g*self.delta_t**2)) * (D.T @ D)
 

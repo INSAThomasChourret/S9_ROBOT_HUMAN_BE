@@ -141,29 +141,11 @@ class WalkingMotion(object):
         self.lf_traj.segments.append(Constant(t_ds + n*(t_ss + t_ds)*2,
                                               t_ds + n*(t_ss + t_ds)*2 + t_ss,
                                               steps_[-1]))
-        
-        ##Plot foot trajectories
-        #import matplotlib.pyplot as plt
-        #times = 0.01 * np.arange(int((self.rf_traj.segments[-1].t_end)/0.01)+1)
-        #rf = np.array(list(map(self.rf_traj, times)))
-        #lf = np.array(list(map(self.lf_traj, times)))
-        #fig = plt.figure()
-        #ax = fig.add_subplot(111)
-        #ax.set_xlabel("second")
-        #ax.set_ylabel("meter")
-        #ax.plot(times, lf[:,0], label="x left foot")
-        #ax.plot(times, rf[:,0], label="x right foot")
-        #ax.plot(times, lf[:,1], label="y left foot")
-        #ax.plot(times, rf[:,1], label="y right foot")
-        #ax.plot(times, lf[:,2], label="z left foot")
-        #ax.plot(times, rf[:,2], label="z right foot")
-        #ax.legend()
-        #plt.show()
 
         # Compute trajectory of the center of mass
         end = 0.5 * (steps_[-1] + steps_[-2])
-        foot_positions = [s[:2] for s in steps_]  # only x,y of steps
-        com_traj = ComTrajectory(com[:2], foot_positions, end[:2], 0.95)
+        foot_positions = [s[:2] for s in steps_[1:]]  # only x,y of steps
+        com_traj = ComTrajectory(com[:2], foot_positions, end[:2], 0.8)
         self.com_trajectory = com_traj
         com_traj.compute()
 
