@@ -24,6 +24,7 @@
 # ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+import os, time, multiprocessing as mp
 import time
 import numpy as np
 from math import atan2, cos, sin
@@ -32,6 +33,68 @@ from cop_des import CoPDes
 from com_trajectory import ComTrajectory
 from inverse_kinematics import InverseKinematics
 from tools import Constant, Piecewise, Affine
+
+
+# ------------------------------------------------------------------
+# Live plot process  (runs in a completely separate Python process)
+# ------------------------------------------------------------------
+def plot_process(data_queue, window=7.0):
+    """
+    Live plotting in a separate process using PyQtGraph.
+    Adds a legend and a dashed red line for the C++ policy.
+    """
+    from pyqtgraph.Qt import QtWidgets
+    import pyqtgraph as pg
+
+    app = QtWidgets.QApplication([])
+    win = pg.GraphicsLayoutWidget(show=True, title="Joint Targets")
+    win.resize(800, 600)
+
+    # One plot per joint
+    plots = [win.addPlot(row=i, col=0) for i in range(3)]
+
+    # Enable legends on each subplot
+    for p in plots:
+        p.addLegend()
+
+    # Blue solid for RL, Red dashed for C++
+    curves = []
+    for p in plots:
+        c1 = p.plot(pen=pg.mkPen(color=(0, 0, 255), width=2, style=pg.QtCore.Qt.SolidLine), name="")
+        c2 = p.plot(pen=pg.mkPen(color=(255, 0, 0), width=2, style=pg.QtCore.Qt.DashLine), name="")
+        c3 = p.plot(pen=pg.mkPen(color=(0, 255, 0), width=2, style=pg.QtCore.Qt.DotLine), name="")
+        curves.append([c1, c2, c3])
+
+    time_data = []
+    ydata = [[[], [], []] for _ in range(3)]
+
+    def update():
+        while not data_queue.empty():
+            t, q_des, q_des_cpp, q_des_3 = data_queue.get()
+            time_data.append(t)
+            for j in range(3):
+                ydata[j][0].append(q_des[j])
+                ydata[j][1].append(q_des_cpp[j])
+                ydata[j][2].append(q_des_3[j])
+
+        # keep only the last `window` seconds
+        while time_data and time_data[-1] - time_data[0] > window:
+            time_data.pop(0)
+            for j in range(3):
+                for k in range(3):
+                    ydata[j][k].pop(0)
+
+        # update curves
+        for j in range(3):
+            curves[j][0].setData(time_data, ydata[j][0])
+            curves[j][1].setData(time_data, ydata[j][1])
+            curves[j][2].setData(time_data, ydata[j][2])
+
+    timer = pg.QtCore.QTimer()
+    timer.timeout.connect(update)
+    timer.start(50)  # ~20 Hz refresh
+    app.exec_()
+# ------------------------------------------------------------------
 
 # Computes the trajectory of a swing foot.
 #
@@ -116,6 +179,11 @@ class WalkingMotion(object):
         # Initial foot positions
         self.rf_traj.segments.append(Constant(0., t_ds, steps_[0]))
         self.lf_traj.segments.append(Constant(0., t_ds, steps_[1]))
+        self.waistOrientation = waistOrientation
+        # Initial waistorientation
+        if waistOrientation is not None:
+            self.waistOrientation = Piecewise()
+            self.waistOrientation.segments.append(Constant(0., t_ds, waistOrientation[0]))
 
         # Steps
         for i in range(1, (len(steps_) - 2)//2 + 1):
@@ -132,6 +200,20 @@ class WalkingMotion(object):
             self.lf_traj.segments.append(SwingFootTrajectory(t_ds + (i-1)*(t_ss + t_ds)*2 + t_ss,
                                                             t_ds + i*(t_ss + t_ds)*2,
                                                             steps_[2*i - 1], steps_[2*i + 1], WalkingMotion.step_height))
+            
+        # Waist orientation
+        for i in range(1, (len(steps_))//2):
+            if self.waistOrientation is not None:
+                self.waistOrientation.segments.append(Affine(t_ds + (i-1)*(t_ss + t_ds)*2,
+                                                              t_ds + (i-1)*(t_ss + t_ds)*2 + t_ss,
+                                                              waistOrientation[i-1],
+                                                              (waistOrientation[i-1] + waistOrientation[i])/2))
+                self.waistOrientation.segments.append(Affine(t_ds + (i-1)*(t_ss + t_ds)*2 + t_ss,
+                                                              t_ds + i*(t_ss + t_ds)*2,
+                                                              (waistOrientation[i-1] + waistOrientation[i])/2,
+                                                              waistOrientation[i]))
+
+
 
         # Final foot positions
         n = (len(steps_) - 2)//2
@@ -141,6 +223,15 @@ class WalkingMotion(object):
         self.lf_traj.segments.append(Constant(t_ds + n*(t_ss + t_ds)*2,
                                               t_ds + n*(t_ss + t_ds)*2 + t_ss,
                                               steps_[-1]))
+        
+        # Final waistorientation
+        if self.waistOrientation is not None:
+            self.waistOrientation.segments.append(Constant(t_ds + n*(t_ss + t_ds)*2,
+                                                          t_ds + n*(t_ss + t_ds)*2 + t_ss,
+                                                          waistOrientation[-1]))
+            self.waistOrientation.segments.append(Constant(t_ds + n*(t_ss + t_ds)*2 + t_ss,
+                                                          float('inf'),
+                                                          waistOrientation[-1]))
 
         # Compute trajectory of the center of mass
         end = 0.5 * (steps_[-1] + steps_[-2])
@@ -164,7 +255,17 @@ class WalkingMotion(object):
             # Set desired waist position
             com_pos = com_traj(t)
             waist_pos = com_pos + com_offset
+
             self.ik.waistRefPose.translation = waist_pos
+
+            # If a waist orientation trajectory is provided, use it
+            if self.waistOrientation is not None:
+                R_waist = self.waistOrientation(t)
+                self.ik.waistRefPose.rotation = R_waist
+                if self.ik.leftFootRefPose.translation[2] != 0.1:
+                    self.ik.leftFootRefPose.rotation = R_waist
+                if self.ik.rightFootRefPose.translation[2] != 0.1:
+                    self.ik.rightFootRefPose.rotation = R_waist
 
             # Solve inverse kinematics
             if i == 0:
@@ -216,15 +317,30 @@ def main():
     wm = WalkingMotion(robot)
     # First two values correspond to initial position of feet
     # Last two values correspond to final position of feet
-    steps = [np.array([0.0, -.1, 0.1]), np.array([0.0, .1, 0.1]), 
-             np.array([0.4, -.1, 0.1]),np.array([.8, .1, 0.1]), 
-             np.array([1.2, -.1, 0.1]),np.array([1.6, .1, 0.1]), 
-             np.array([1.6, -.1, 0.1]), np.array([1.6, .1, 0.1])]
-    configs = wm.compute(q, steps)
+    
+    steps = [np.array([0.0, -0.1, 0.1]), np.array([0.0, 0.1, 0.1])]
+    for i in range(8):
+        steps.append (np.array ([0.2*(i+1), -0.1 if i%2==0 else 0.1, 0.1]))
+    steps.append (np.array ([1.8, -0.1, 0.1]))
+    steps.append (np.array ([1.8, 0.1, 0.1]))
+
+    configs = wm.compute(q, steps, waistOrientation=None)
+    mp.set_start_method('spawn')   # safer on Linux/OSX
+    data_queue = mp.Queue(maxsize=1000)
+    plotter = mp.Process(target=plot_process, args=(data_queue,))
+    plotter.start()
     #print(len(configs))
-    for q in configs:
-        time.sleep(1e-2)
+    for i, q in enumerate(configs):
+        time.sleep(5e-3)
         robot.display(q)
+        # Send some data to plotter
+        t = wm.times[i]
+        q_des = q[7:10]
+        q_des_cpp = q[10:13]
+        q_des_3 = q[13:16]
+        data_queue.put((t, q_des, q_des_cpp, q_des_3))
+    plotter.join()
+    
     delta_t = wm.com_trajectory.delta_t
     times = delta_t*np.arange(wm.com_trajectory.N+1)
     lf = np.array(list(map(wm.lf_traj, times)))

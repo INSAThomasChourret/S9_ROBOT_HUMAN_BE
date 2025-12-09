@@ -97,7 +97,10 @@ class Integrand(object):
         self.derivative = bezier.derivative()
 
     def __call__(self, t):
-        pass
+        theta = self.function(t)[2]
+        vT = cos(theta)*self.derivative(t)[0] + sin(theta)*self.derivative(t)[1]
+        vN = -sin(theta)*self.derivative(t)[0] + cos(theta)*self.derivative(t)[1]
+        return (vT)**2 + self.alpha * (vN)**2
 
 class SlidingMotion(object):
     """
@@ -105,21 +108,39 @@ class SlidingMotion(object):
     an integral cost favoring forward motions
     """
     beta = 100
-    stepLength = .25
+    stepLength = .25    
     def __init__(self, robot, q0, end):
-        """ Constructor
+        self.robot = robot
+        self.wm = WalkingMotion(robot)
+        self.q0 = q0
+        self.end = end
+    
+        qx, qy, qz, qw = q0[3], q0[4], q0[5], q0[6]
+        
+        yaw_start = atan2(2*(qw*qz + qx*qy), 1 - 2*(qy**2 + qz**2))
+        
+        self.start_pose = np.array([q0[0], q0[1], yaw_start])
 
-        - input: q0 initial configuration of the robot,
-        - end: end configuration specified as (x, y, theta) for the position
-                and orientation in the plane.
-        """
-        pass
+        self.slidingPath = Bezier([np.array([0,0,0]), end])
+        cp = self.solve()
+        cp = np.array(cp).reshape((-1,3))
+        
+        self.slidingPath = Bezier([self.start_pose] +
+                                  [cp[i] for i in range(cp.shape[0])] +
+                                  [self.end])
+        print(self.slidingPath)
 
     def cost(self, X):
         """
         Compute the cost of a trajectory represented by a Bezier curve
         """
         assert(len(X.shape) == 1)
+        B = (Bezier([self.start_pose] +
+                             [X[3*i:3*(i+1)] for i in range(len(X)//3)] +
+                             [self.end]))
+        I = Integrand(B)
+        return .5 * simpson(I, 0, 1, 100) + self.beta * self.boundaryConstraints(X)
+
 
     def boundaryConstraints(self, X):
         """
@@ -127,18 +148,41 @@ class SlidingMotion(object):
         (resp. at the end) of the trajectory with the unit vector normal to
         the initial (resp. end) orientation.
         """
+        assert(len(X.shape) == 1)
+        B = (Bezier([self.start_pose] +
+                             [X[3*i:3*(i+1)] for i in range(len(X)//3)] +
+                             [self.end]))
+        D = B.derivative()
+        theta0 = self.start_pose[2] 
+        thetaf = self.end[2]
+        CostBundary =  (-sin(theta0)*D(0)[0] + cos(theta0)*D(0)[1])**2
+        CostBundary += (-sin(thetaf)*D(1)[0] + cos(thetaf)*D(1)[1])**2
+        return CostBundary
 
     def solve(self):
         """
         Solve the optimization problem. Initialize with a straight line
         """
+        init = list()
+        n_control_points = 5
+        for i in range(1, n_control_points+1):
+            s = i/(n_control_points+1)
+            x = (1-s)*self.start_pose[0] + s*self.end[0]
+            y = (1-s)*self.start_pose[1] + s*self.end[1]
+            theta = (1-s)*self.start_pose[2] + s*self.end[2]
+            init += [x, y, theta]
+        return fmin_slsqp(self.cost, np.array(init), iprint=0, full_output=1)[0]
 
     def leftFootPose(self, pose):
         """
         Compute the desired pose of the left foot given the values (x,y,theta)
         contained in the input np.array pose.
         """
+        theta = pose[2]
         res = np.zeros(3)
+        res[0] = pose[0] - (0.2/2)*sin(theta)
+        res[1] = pose[1] + (0.2/2)*cos(theta)
+        res[2] = .1
         return res
 
     def rightFootPose(self, pose):
@@ -146,12 +190,34 @@ class SlidingMotion(object):
         Compute the desired pose of the right foot given the values (x,y,theta)
         contained in the input np.array pose.
         """
+        theta = pose[2]
         res = np.zeros(3)
+        res[0] = pose[0] + (0.2/2)*sin(theta)
+        res[1] = pose[1] - (0.2/2)*cos(theta)
+        res[2] = .1
         return res
 
 
     def computeMotion(self):
         configs = list()
+        n_steps = 10
+    
+        steps = []
+        waistOrientation = []
+        for i in range(n_steps+1):
+            s = self.slidingPath(i/n_steps)
+            steps.append(self.rightFootPose(s))
+            steps.append(self.leftFootPose(s))
+
+            theta = s[2]
+            R_waist = np.array([[cos(theta), -sin(theta), 0],
+                               [sin(theta),  cos(theta), 0],
+                               [0,               0,      1]])
+            waistOrientation.append(R_waist)
+
+        
+        configs = self.wm.compute(self.q0, steps, waistOrientation=waistOrientation)
+    
         return configs
         
 if __name__ == '__main__':
@@ -168,6 +234,8 @@ if __name__ == '__main__':
         0.00000000e+00, 0.00000000e+00, -2.00000000e-01, 0.00000000e+00,
         0.00000000e+00, 0.00000000e+00, 0.00000000e+00, 0.00000000e+00,
         0.00000000e+00, 0.00000000e+00, 0.00000000e+00])
+
+    robot.display(q0)
 
     end = np.array([2, 1, 1.57])
     sm = SlidingMotion(robot, q0, end)

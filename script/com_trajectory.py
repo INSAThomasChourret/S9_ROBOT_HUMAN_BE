@@ -96,15 +96,6 @@ class ComTrajectory(object):
         def solve_reduced_system(A, C, b, d):
             """
             Résout l'équation : X_bar = (AC)^+ (b - Ad)
-            
-            Paramètres:
-            - A : Matrice de dynamique (N x N)
-            - C : Matrice de sélection (N x N-2)
-            - b : Vecteur cible (CoP_des) (N x 2)
-            - d : Vecteur de contraintes de bord (offsets) (N x 2)
-            
-            Retourne:
-            - X_bar : La trajectoire du centre de masse "du milieu" (sans start/end)
             """
             
             lhs_matrix = A @ C  
