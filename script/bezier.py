@@ -221,8 +221,8 @@ class SlidingMotion(object):
             if True:
                 theta = s[2]
                 R_waist = np.array([[cos(theta), -sin(theta), 0],
-                                   [sin(theta),  cos(theta), 0],
-                                   [0,               0,      1]])
+                                   [sin(theta),   cos(theta), 0],
+                                   [0,                0,      1]])
                 waistOrientation.append(R_waist)
 
         steps.append(self.rightFootPose(s))
