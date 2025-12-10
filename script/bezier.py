@@ -207,18 +207,31 @@ class SlidingMotion(object):
         waistOrientation = []
         for i in range(n_steps+1):
             s = self.slidingPath(i/n_steps)
-            steps.append(self.rightFootPose(s))
-            steps.append(self.leftFootPose(s))
 
-            theta = s[2]
-            R_waist = np.array([[cos(theta), -sin(theta), 0],
-                               [sin(theta),  cos(theta), 0],
-                               [0,               0,      1]])
-            waistOrientation.append(R_waist)
+            if i == 0:
+                steps.append(self.rightFootPose(s))
+                steps.append(self.leftFootPose(s))
+            else:
+                if (i+1)%2 == 0:
+                    steps.append(self.rightFootPose(s))
+                else:
+                    steps.append(self.leftFootPose(s))
 
-        
+
+            if True:
+                theta = s[2]
+                R_waist = np.array([[cos(theta), -sin(theta), 0],
+                                   [sin(theta),  cos(theta), 0],
+                                   [0,               0,      1]])
+                waistOrientation.append(R_waist)
+
+        steps.append(self.rightFootPose(s))
+        steps.append(self.leftFootPose(s))
+        waistOrientation.append(waistOrientation[-1])
+        waistOrientation.append(waistOrientation[-1])
+
         configs = self.wm.compute(self.q0, steps, waistOrientation=waistOrientation)
-    
+
         return configs
         
 if __name__ == '__main__':
@@ -238,7 +251,7 @@ if __name__ == '__main__':
 
     robot.display(q0)
 
-    end = np.array([4, 2, 1.57])
+    end = np.array([2, 1, 1.57])
     sm = SlidingMotion(robot, q0, end)
     configs = sm.computeMotion()
     for q in configs:

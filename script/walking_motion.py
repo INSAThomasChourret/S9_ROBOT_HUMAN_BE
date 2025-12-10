@@ -33,6 +33,7 @@ from cop_des import CoPDes
 from com_trajectory import ComTrajectory
 from inverse_kinematics import InverseKinematics
 from tools import Constant, Piecewise, Affine
+from tqdm import tqdm
 
 
 # ------------------------------------------------------------------
@@ -202,16 +203,16 @@ class WalkingMotion(object):
                                                             steps_[2*i - 1], steps_[2*i + 1], WalkingMotion.step_height))
             
         # Waist orientation
-        for i in range(1, (len(steps_))//2):
+        for i in range(1, (len(steps_) - 2)//2+1):
             if self.waistOrientation is not None:
                 self.waistOrientation.segments.append(Affine(t_ds + (i-1)*(t_ss + t_ds)*2,
                                                               t_ds + (i-1)*(t_ss + t_ds)*2 + t_ss,
-                                                              waistOrientation[i-1],
-                                                              (waistOrientation[i-1] + waistOrientation[i])/2))
+                                                              waistOrientation[2*i-2],
+                                                              (waistOrientation[2*i-1])/1))
                 self.waistOrientation.segments.append(Affine(t_ds + (i-1)*(t_ss + t_ds)*2 + t_ss,
                                                               t_ds + i*(t_ss + t_ds)*2,
-                                                              (waistOrientation[i-1] + waistOrientation[i])/2,
-                                                              waistOrientation[i]))
+                                                              (waistOrientation[2*i-1])/1,
+                                                              waistOrientation[2*i]))
 
 
 
@@ -226,8 +227,9 @@ class WalkingMotion(object):
         
         # Final waistorientation
         if self.waistOrientation is not None:
-            self.waistOrientation.segments.append(Constant(t_ds + n*(t_ss + t_ds)*2,
+            self.waistOrientation.segments.append(Affine(t_ds + n*(t_ss + t_ds)*2,
                                                           t_ds + n*(t_ss + t_ds)*2 + t_ss,
+                                                          waistOrientation[-2],
                                                           waistOrientation[-1]))
             self.waistOrientation.segments.append(Constant(t_ds + n*(t_ss + t_ds)*2 + t_ss,
                                                           float('inf'),
@@ -242,7 +244,7 @@ class WalkingMotion(object):
 
         configs = []
         
-        for i in range(len(self.times)):
+        for i in tqdm(range(len(self.times)), desc="Computing walking motion inverse kinematics"):
             t = self.times[i]
             # Compute desired positions of left and right foot
             left_foot_pos = self.lf_traj(t)
@@ -262,9 +264,9 @@ class WalkingMotion(object):
             if self.waistOrientation is not None:
                 R_waist = self.waistOrientation(t)
                 self.ik.waistRefPose.rotation = R_waist
-                if self.ik.leftFootRefPose.translation[2] != 0.1:
+                if True or self.ik.leftFootRefPose.translation[2] != 0.1:
                     self.ik.leftFootRefPose.rotation = R_waist
-                if self.ik.rightFootRefPose.translation[2] != 0.1:
+                if True or self.ik.rightFootRefPose.translation[2] != 0.1:
                     self.ik.rightFootRefPose.rotation = R_waist
 
             # Solve inverse kinematics
@@ -274,6 +276,32 @@ class WalkingMotion(object):
                 q_init = configs[-1]
             q_sol = self.ik.solve(q_init)
             configs.append(q_sol)
+
+        # Plot foot trajectories for debugging and waist orientation
+        import matplotlib.pyplot as plt
+        times = np.array(self.times)
+        lf = np.array(list(map(self.lf_traj, times)))
+        rf = np.array(list(map(self.rf_traj, times)))
+        fig = plt.figure()
+        ax1 = fig.add_subplot(411)
+        ax2 = fig.add_subplot(412)
+        ax3 = fig.add_subplot(413)
+        ax4 = fig.add_subplot(414)
+        ax1.plot(times, lf[:,0], label="x left foot")
+        ax1.plot(times, rf[:,0], label="x right foot")
+        ax1.legend()
+        ax2.plot(times, lf[:,1], label="y left foot")
+        ax2.plot(times, rf[:,1], label="y right foot")
+        ax2.legend()
+        ax3.plot(times, lf[:,2], label="z left foot")
+        ax3.plot(times, rf[:,2], label="z right foot")
+        ax3.legend()
+        if self.waistOrientation is not None:
+            waist_orientations = np.array([atan2(self.waistOrientation(t)[1,0],
+                                                 self.waistOrientation(t)[0,0]) for t in times])
+            ax4.plot(times, waist_orientations, label="waist orientation")
+            ax4.legend()
+        plt.show()
 
         return configs
 
