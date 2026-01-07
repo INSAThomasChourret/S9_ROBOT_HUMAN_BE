@@ -101,7 +101,8 @@ class Integrand(object):
         vT = cos(theta)*self.derivative(t)[0] + sin(theta)*self.derivative(t)[1]
         vN = -sin(theta)*self.derivative(t)[0] + cos(theta)*self.derivative(t)[1]
         w = self.derivative(t)[2]
-        return (vT)**2 + self.alpha * (vN)**2 + .0 * (w)**2
+        vTT = vT if vT < 0 else 0
+        return (vT)**2 + self.alpha * (vN)**2 + .0 * (w)**2 + .5 * (vTT)**2
 
 class SlidingMotion(object):
     """
@@ -251,9 +252,20 @@ if __name__ == '__main__':
 
     robot.display(q0)
 
-    end = np.array([2, 1, 1.57])
-    sm = SlidingMotion(robot, q0, end)
-    configs = sm.computeMotion()
+    positions = np.array([[2, 1, 1.57],
+                          [0, 2, 3.141592654],
+                          [-2, 1, -1.57],
+                          [0, 0, 0]])
+
+    configs = list()
+    for i, pos in enumerate(positions):
+        if i == 0:
+            q_start = q0
+        else:
+            q_start = configs[-1]
+        sm = SlidingMotion(robot, q_start, pos)
+        configs += sm.computeMotion()
+
     for q in configs:
         time.sleep(1e-2)
         robot.display(q)
