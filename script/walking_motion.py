@@ -34,6 +34,8 @@ from com_trajectory import ComTrajectory
 from inverse_kinematics import InverseKinematics
 from tools import Constant, Piecewise, Affine
 from tqdm import tqdm
+import matplotlib
+matplotlib.use('Qt5Agg')
 
 
 # ------------------------------------------------------------------
@@ -234,6 +236,9 @@ class WalkingMotion(object):
             self.waistOrientation.segments.append(Constant(t_ds + n*(t_ss + t_ds)*2 + t_ss,
                                                           float('inf'),
                                                           waistOrientation[-1]))
+            
+        self.time_end = t_ds + n*(t_ss + t_ds)*2 + t_ss
+        self.times = np.arange(0, self.time_end, 0.01)
 
         # Compute trajectory of the center of mass
         end = 0.5 * (steps_[-1] + steps_[-2])
@@ -264,9 +269,9 @@ class WalkingMotion(object):
             if self.waistOrientation is not None:
                 R_waist = self.waistOrientation(t)
                 self.ik.waistRefPose.rotation = R_waist
-                if True or self.ik.leftFootRefPose.translation[2] != 0.1:
+                if self.ik.leftFootRefPose.translation[2] != 0.1:
                     self.ik.leftFootRefPose.rotation = R_waist
-                if True or self.ik.rightFootRefPose.translation[2] != 0.1:
+                if self.ik.rightFootRefPose.translation[2] != 0.1:
                     self.ik.rightFootRefPose.rotation = R_waist
 
             # Solve inverse kinematics
@@ -306,6 +311,15 @@ class WalkingMotion(object):
         return configs
 
 def main():
+
+    import multiprocessing as mp
+    
+    # 1. This MUST be the very first line inside the main check
+    try:
+        mp.set_start_method('spawn', force=True)
+    except RuntimeError:
+        pass # It was already set, which is fine
+
     import matplotlib.pyplot as plt
     from talos import Robot
     from pinocchio import neutral
@@ -353,7 +367,6 @@ def main():
     steps.append (np.array ([1.8, 0.1, 0.1]))
 
     configs = wm.compute(q, steps, waistOrientation=None)
-    mp.set_start_method('spawn')   # safer on Linux/OSX
     data_queue = mp.Queue(maxsize=1000)
     plotter = mp.Process(target=plot_process, args=(data_queue,))
     plotter.start()

@@ -95,7 +95,7 @@ class ComTrajectory(object):
 
         def solve_reduced_system(A, C, b, d):
             """
-            Résout l'équation : X_bar = (AC)^+ (b - Ad)
+            Solve equation : X_bar = (AC)^+ (b - Ad)
             """
             
             lhs_matrix = A @ C  

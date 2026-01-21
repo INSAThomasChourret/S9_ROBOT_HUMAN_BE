@@ -34,6 +34,8 @@ from talos import Robot
 from scipy.optimize import fmin_slsqp
 from cop_des import CoPDes
 from walking_motion import WalkingMotion
+import matplotlib
+matplotlib.use('Qt5Agg')
 
 class Bezier(object):
     """
@@ -252,10 +254,7 @@ if __name__ == '__main__':
 
     robot.display(q0)
 
-    positions = np.array([[2, 1, 1.57],
-                          [0, 2, 3.141592654],
-                          [-2, 1, -1.57],
-                          [0, 0, 0]])
+    positions = np.array([[2, 1, 1.57]])
 
     configs = list()
     for i, pos in enumerate(positions):
